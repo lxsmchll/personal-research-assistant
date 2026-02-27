@@ -1,0 +1,518 @@
+{
+  "name": "Personal Research Assistant - Add Document",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "add-doc",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "ed339a25-4165-468a-8999-ef596adcce9f",
+      "name": "Webhook - Slack /add-doc",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -960,
+        704
+      ],
+      "webhookId": "add-doc-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract file URL from Slack command\nconst slackPayload = $input.item.json;\nconst fileUrl = slackPayload.text?.trim() || '';\nconst userId = slackPayload.user_id;\nconst userName = slackPayload.user_name;\n\n// Validate URL\nif (!fileUrl) {\n  return {\n    json: {\n      error: true,\n      message: 'Please provide a file URL. Usage: /add-doc <file_url>',\n      userId,\n      userName\n    }\n  };\n}\n\n// Check if PDF\nif (!fileUrl.toLowerCase().endsWith('.pdf') && !fileUrl.includes('pdf')) {\n  return {\n    json: {\n      error: true,\n      message: 'Currently only PDF files are supported',\n      userId,\n      userName\n    }\n  };\n}\n\nreturn {\n  json: {\n    fileUrl,\n    userId,\n    userName,\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -304,
+        704
+      ],
+      "id": "f7a3d2d3-6503-41a8-850b-b1ba99e55438",
+      "name": "Parse Slack Input"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the extracted text from the \"Extract from File\" node\nconst extractedData = $input.first().json;\n\n// The Extract from File node returns text in the 'text' field\nconst fullText = extractedData.text || '';\n\n// Get file info from previous nodes\nconst fileUrl = $('Parse Slack Input').item.json.fileUrl;\nconst fileName = fileUrl.split('/').pop().replace('.pdf', '');\nconst userName = $('Parse Slack Input').item.json.userName;\n\n// Create title from filename (Extract from File doesn't give us PDF metadata)\nconst title = fileName.replace(/_/g, ' ').replace(/-/g, ' ');\nconst author = 'Unknown'; // Extract from File node doesn't extract PDF metadata\n\n// Count pages (rough estimate - Extract from File doesn't provide page count)\n// We'll estimate based on text length (roughly 3000 chars per page)\nconst pageCount = Math.max(1, Math.ceil(fullText.length / 3000));\n\n// Count words\nconst wordCount = fullText.trim().split(/\\s+/).length;\n\n// Store metadata for later nodes\nreturn {\n  json: {\n    text: fullText.trim(),\n    title: title || 'Untitled Document',\n    author: author,\n    page_count: pageCount,\n    word_count: wordCount,\n    char_count: fullText.length,\n    file_url: fileUrl,\n    added_by: userName,\n    added_date: new Date().toISOString()\n  }\n};"
+      },
+      "id": "76f45d5b-7c23-4597-8144-e9dbce5a9a09",
+      "name": "Process PDF Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        688,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "946b5659-433b-4d97-bb2c-6988e9cb0a79",
+              "name": "user_name",
+              "value": "={{ $json.body.user_name }}",
+              "type": "string"
+            },
+            {
+              "id": "cf4131d3-5e1d-44bb-a5f5-57f7e3243161",
+              "name": "user_id",
+              "value": "={{ $json.body.user_id }}",
+              "type": "string"
+            },
+            {
+              "id": "3c771601-6331-4ec4-9974-ef325100b803",
+              "name": "text",
+              "value": "={{ $json.body.text }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -528,
+        704
+      ],
+      "id": "cbfccf48-fa4a-4148-aa4b-c9438f2494e8",
+      "name": "Edit Fields1"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsHuggingFaceInference",
+      "typeVersion": 1,
+      "position": [
+        896,
+        752
+      ],
+      "id": "46eecbbc-01a3-49f5-b23d-09be537d3944",
+      "name": "Embeddings HuggingFace Inference1",
+      "credentials": {
+        "huggingFaceApi": {
+          "id": "PG4czgBlJQpK7N0s",
+          "name": "HuggingFace API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonMode": "expressionData",
+        "jsonData": "={{ $json.text }}",
+        "textSplittingMode": "custom",
+        "options": {
+          "metadata": {
+            "metadataValues": [
+              {
+                "name": "title",
+                "value": "={{ $json.title }}"
+              },
+              {
+                "name": "author",
+                "value": "={{ $json.author }}"
+              },
+              {
+                "name": "page_count",
+                "value": "={{ $json.page_count }}"
+              },
+              {
+                "name": "char_count",
+                "value": "={{ $json.word_count }}"
+              },
+              {
+                "name": "char_count",
+                "value": "={{ $json.char_count }}"
+              },
+              {
+                "name": "file_url",
+                "value": "={{ $json.file_url }}"
+              },
+              {
+                "name": "added_by",
+                "value": "={{ $json.added_by }}"
+              },
+              {
+                "name": "added_date",
+                "value": "={{ $json.added_date }}"
+              }
+            ]
+          }
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1.1,
+      "position": [
+        1040,
+        800
+      ],
+      "id": "e74ec7d3-458f-4f1e-b018-e96fe769412e",
+      "name": "Default Data Loader1"
+    },
+    {
+      "parameters": {
+        "separator": ".",
+        "chunkSize": 2000
+      },
+      "type": "@n8n/n8n-nodes-langchain.textSplitterCharacterTextSplitter",
+      "typeVersion": 1,
+      "position": [
+        1040,
+        944
+      ],
+      "id": "1d3db5eb-1083-47c3-8bc6-b9c19821d65e",
+      "name": "Character Text Splitter"
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "tableName": {
+          "__rl": true,
+          "value": "research_documents",
+          "mode": "list",
+          "cachedResultName": "research_documents"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1.3,
+      "position": [
+        912,
+        560
+      ],
+      "id": "47bb1e40-bd52-4a73-8fc6-23ebf0b9200c",
+      "name": "Supabase Vector Store",
+      "credentials": {
+        "supabaseApi": {
+          "id": "wY8KwuEPxNXm7D7z",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.error}}",
+              "operation": "notEqual",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "9138b244-05ff-42b1-a242-9d03faf5692c",
+      "name": "Check for \"No Error\"",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        -80,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "={{ $('Webhook - Slack /add-doc').item.json.body.channel_id }}",
+          "mode": "id"
+        },
+        "text": "An error occurred while processing your document",
+        "otherOptions": {
+          "includeLinkToWorkflow": false,
+          "ephemeral": {
+            "ephemeralValues": {
+              "user": {
+                "__rl": true,
+                "value": "={{ $('Webhook - Slack /add-doc').item.json.body.user_id }}",
+                "mode": "id"
+              }
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        240,
+        832
+      ],
+      "id": "af7fb53d-c86a-4b9a-9175-24dd922f9c50",
+      "name": "Error Message",
+      "webhookId": "16670801-bc89-4848-a4dc-bd0d7bfb2d0f",
+      "credentials": {
+        "slackApi": {
+          "id": "verXYSGVsqfbTiLi",
+          "name": "Slack API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "={{ $('Webhook - Slack /add-doc').item.json.body.channel_id }}",
+          "mode": "id"
+        },
+        "text": "=✅ Document added successfully!\nYou can now query this document using `/ask [your question]`",
+        "otherOptions": {
+          "includeLinkToWorkflow": false,
+          "ephemeral": {
+            "ephemeralValues": {
+              "user": {
+                "__rl": true,
+                "value": "={{ $('Webhook - Slack /add-doc').item.json.body.user_id }}",
+                "mode": "id"
+              }
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        1584,
+        560
+      ],
+      "id": "26c83f42-a777-4168-843f-dc4b1a0c445e",
+      "name": "Success Message",
+      "webhookId": "03a92b8f-c0d5-4a76-a83e-2e8ffd66e634",
+      "credentials": {
+        "slackApi": {
+          "id": "verXYSGVsqfbTiLi",
+          "name": "Slack API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=Saving in progress",
+        "options": {}
+      },
+      "id": "06e28b95-0c24-478d-bc66-51b82b67d6fd",
+      "name": "Respond to Slack",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        -752,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        464,
+        560
+      ],
+      "id": "e19f6e41-02b7-434e-ba22-9f70628a9ee4",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "url": "={{$json.fileUrl}}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "09807a6a-2e6f-46c3-904b-f41f38d911fe",
+      "name": "Download PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        240,
+        560
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        1328,
+        560
+      ],
+      "id": "10bfb9e2-53a1-43b0-8e48-47982282a6a3",
+      "name": "Limit"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - Slack /add-doc": {
+      "main": [
+        [
+          {
+            "node": "Respond to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Slack Input": {
+      "main": [
+        [
+          {
+            "node": "Check for \"No Error\"",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process PDF Data": {
+      "main": [
+        [
+          {
+            "node": "Supabase Vector Store",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields1": {
+      "main": [
+        [
+          {
+            "node": "Parse Slack Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings HuggingFace Inference1": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Supabase Vector Store",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Default Data Loader1": {
+      "ai_document": [
+        [
+          {
+            "node": "Supabase Vector Store",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Character Text Splitter": {
+      "ai_textSplitter": [
+        [
+          {
+            "node": "Default Data Loader1",
+            "type": "ai_textSplitter",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase Vector Store": {
+      "main": [
+        [
+          {
+            "node": "Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check for \"No Error\"": {
+      "main": [
+        [
+          {
+            "node": "Download PDF",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Slack": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Process PDF Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download PDF": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit": {
+      "main": [
+        [
+          {
+            "node": "Success Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "e72eb2e1-6d49-46c9-acc7-c5f21364a26e",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "97cdaab89af73ebd5970b4d23e9d1859d7eb3b935c78db3eb6127ddba5b4902d"
+  },
+  "id": "sZYe89ltyfWaezdw",
+  "tags": []
+}
